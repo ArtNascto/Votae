@@ -1,0 +1,14 @@
+﻿@page "/"
+@using MudBlazor
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
+  <MudText Typo="Typo.h4">Olá MAUI + MudBlazor!</MudText>
+  <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@Increment">
+    Clique em mim (@_count)
+  </MudButton>
+</MudContainer>
+
+@code {
+  private int _count;
+  void Increment() => _count++;
+}
