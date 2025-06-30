@@ -1,0 +1,182 @@
+
+@page "/eleicao/detalhes/{Id:int}"
+@using Votae.Services 
+
+@inject IDataService DbService
+@inject NavigationManager NavManager
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-10">
+    <MudText Typo="Typo.h4" GutterBottom="true">@Title</MudText>
+    
+    <MudPaper Class="pa-4 mt-4">
+        <MudForm @ref="form" Model="@eleicaoModel">
+            <MudTextField @bind-Value="eleicaoModel.Nome" Label="Nome da Eleição" Variant="Variant.Outlined" For="@(() => eleicaoModel.Nome)" Required="true" RequiredError="O nome é obrigatório." />
+            <MudDatePicker @bind-Date="eleicaoModel.DataInicio" Label="Data de Início" Variant="Variant.Outlined" Class="mt-4" Required="true" />
+        </MudForm>
+    </MudPaper>
+
+    <!-- Seção de Candidatos -->
+    @if (eleicaoModel.Id != 0)
+    {
+        <div class="d-flex justify-space-between align-center mt-8 mb-4">
+            <MudText Typo="Typo.h5">Candidatos</MudText>
+            <MudButton Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => OpenCandidatoDialog(null))">Novo Candidato</MudButton>
+        </div>
+        
+        <MudTable Items="@candidatos" T="Candidato" Hover="true">
+            <HeaderContent>
+                <MudTh>Foto</MudTh>
+                <MudTh>Número</MudTh>
+                <MudTh>Nome do Candidato</MudTh>
+                <MudTh>Vice</MudTh>
+                <MudTh>Ações</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Foto">
+                   @if (!string.IsNullOrEmpty(context.FotoCandidatoBase64))
+                    {
+                        <MudAvatar>
+                            <MudImage Src="@($"data:image/jpeg;base64,{context.FotoCandidatoBase64}")"></MudImage>
+                            </MudAvatar>
+                    }
+                    else
+                    {
+                        <MudAvatar Color="Color.Primary">@GetInitials(context.NomeCandidato)</MudAvatar>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Número">@context.Numero</MudTd>
+                <MudTd DataLabel="Nome">@context.NomeCandidato</MudTd>
+                <MudTd DataLabel="Vice">@context.NomeVice</MudTd>
+                <MudTd DataLabel="Ações">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" OnClick="@(() => OpenCandidatoDialog(context))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteCandidato(context))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText>Nenhum candidato cadastrado para esta eleição.</MudText>
+            </NoRecordsContent>
+        </MudTable>
+    }
+
+    <MudStack Row="true" Justify="Justify.FlexEnd" Class="mt-8">
+        <MudButton Variant="Variant.Text" OnClick="@(() => NavManager.NavigateTo("/"))">Voltar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save">Salvar Alterações na Eleição</MudButton>
+    </MudStack>
+</MudContainer>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    private MudForm form;
+    private Eleicao eleicaoModel = new();
+    private List<Candidato> candidatos = new();
+    private string Title = "Nova Eleição";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id != 0)
+        {
+            var result = await DbService.GetEleicaoByIdAsync(Id);
+            if (result != null)
+            {
+                eleicaoModel = result;
+                Title = $"Editar Eleição: {eleicaoModel.Nome}";
+                await LoadCandidatosAsync();
+            }
+            else
+            {
+                Snackbar.Add($"Eleição com ID {Id} não encontrada.", Severity.Error);
+                NavManager.NavigateTo("/");
+            }
+        }
+    }
+
+    private async Task LoadCandidatosAsync()
+    {
+        if (eleicaoModel.Id == 0) return;
+        candidatos = await DbService.GetCandidatosByEleicaoIdAsync(eleicaoModel.Id);
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            eleicaoModel.Id = await DbService.SaveEleicaoAsync(eleicaoModel);
+            Title = $"Editar Eleição: {eleicaoModel.Nome}";
+            Snackbar.Add("Detalhes da eleição salvos com sucesso!", Severity.Success);
+            StateHasChanged();
+        }
+    }
+    private string GetInitials(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length > 1)
+        {
+            return $"{parts[0][0]}{parts[^1][0]}".ToUpper();
+        }
+        return name.Length > 1 ? name.Substring(0, 2).ToUpper() : name.ToUpper();
+    }
+
+    private async Task OpenCandidatoDialog(Candidato? candidato)
+    {
+        var candidatoParaEditar = new Candidato();
+        var dialogTitle = "Novo Candidato";
+
+        if (candidato != null)
+        {
+            // Clona o objeto para não editar a lista diretamente até salvar
+            candidatoParaEditar = new Candidato { 
+                Id = candidato.Id, 
+                IdEleicao = candidato.IdEleicao,
+                NomeCandidato = candidato.NomeCandidato,
+                NomeVice = candidato.NomeVice,
+                Numero = candidato.Numero,
+                FotoCandidatoBase64 = candidato.FotoCandidatoBase64,
+                FotoViceBase64 = candidato.FotoViceBase64
+            };
+            dialogTitle = "Editar Candidato";
+        }
+        else
+        {
+            candidatoParaEditar.IdEleicao = eleicaoModel.Id;
+        }
+
+        var parameters = new DialogParameters { ["candidatoModel"] = candidatoParaEditar, ["DialogTitle"] = dialogTitle };
+        
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true };
+        
+        var dialog = DialogService.Show<CandidatoDialog>(dialogTitle, parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            if(result.Data is Candidato resultCandidato)
+            {
+                await DbService.SaveCandidatoAsync(resultCandidato);
+                Snackbar.Add("Candidato salvo com sucesso!", Severity.Success);
+                await LoadCandidatosAsync();
+            }
+        }
+    }
+    
+    private async Task DeleteCandidato(Candidato candidato)
+    {
+        var result = await DialogService.ShowMessageBox(
+            "Confirmar Exclusão", 
+            $"Tem certeza que deseja remover o candidato '{candidato.NomeCandidato}'?", 
+            yesText:"Sim, Excluir!", cancelText:"Cancelar");
+
+        if (result == true)
+        {
+            await DbService.DeleteCandidatoAsync(candidato.Id);
+            Snackbar.Add("Candidato removido.", Severity.Success);
+            await LoadCandidatosAsync();
+        }
+    }
+}

@@ -1,14 +1,139 @@
-﻿@page "/"
+﻿
+@page "/"
 @using MudBlazor
+@using System.IO
+@using Votae.Services // Certifique-se de que este é o namespace do seu projeto
 
-<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-6">
-  <MudText Typo="Typo.h4">Olá MAUI + MudBlazor!</MudText>
-  <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@Increment">
-    Clique em mim (@_count)
-  </MudButton>
+// CORREÇÃO APLICADA AQUI: Injetando a interface, não a classe.
+@inject IDataService DbService
+@inject NavigationManager NavManager
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-10">
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">
+            <MudText Typo="Typo.h6">Ocorreu um erro:</MudText>
+            <MudText>@errorMessage</MudText>
+        </MudAlert>
+    }
+    else
+    {
+        <MudText Typo="Typo.h3" GutterBottom="true">Painel de Controle de Eleições</MudText>
+        <MudText Class="mb-8">Gerencie, monitore e audite todas as eleições em um só lugar.</MudText>
+        
+        <MudStack Row="true" Class="mb-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="AddEleicao">Nova Eleição</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Assessment" Disabled="@(selectedItem == null)" OnClick="ShowReports">Relatórios</MudButton>
+        </MudStack>
+        
+        <MudTable Items="@Eleicoes" T="Eleicao" Hover="true" Breakpoint="Breakpoint.Sm"
+                  OnRowClick="@((TableRowClickEventArgs<Eleicao> args) => RowClicked(args))"
+                  RowClassFunc="@( (item, index) => selectedItem != null && item.Id == selectedItem.Id ? "mud-table-row-selected" : "" )"
+                  Filter="new Func<Eleicao, bool>(FilterFunc)">
+            <ToolBarContent>
+                <MudText Typo="Typo.h6">Eleições Cadastradas</MudText>
+                <MudSpacer />
+                <MudTextField @bind-Value="searchString" Placeholder="Pesquisar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            </ToolBarContent>
+            <HeaderContent>
+                <MudTh>ID</MudTh>
+                <MudTh>Nome da Eleição</MudTh>
+                <MudTh>Status</MudTh>
+                <MudTh>Data de Início</MudTh>
+                <MudTh>Ações</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Id">@context.Id</MudTd>
+                <MudTd DataLabel="Nome">@context.Nome</MudTd>
+                <MudTd DataLabel="Status">
+                    <StatusChip Status="@context.Status" />
+                </MudTd>
+                <MudTd DataLabel="Data de Início">@context.DataInicio?.ToString("dd/MM/yyyy")</MudTd>
+                <MudTd DataLabel="Ações">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" OnClick="@(() => EditEleicao(context.Id))" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Variant="Variant.Outlined" Color="Color.Error" Size="Size.Small" OnClick="@(() => ConfirmDelete(context.Id, context.Nome))" Disabled="@(context.Status != "Pendente")" />
+                </MudTd>
+            </RowTemplate>
+            <PagerContent>
+                <MudTablePager />
+            </PagerContent>
+        </MudTable>
+    }
 </MudContainer>
 
 @code {
-  private int _count;
-  void Increment() => _count++;
+    private List<Eleicao> Eleicoes = new List<Eleicao>();
+    private string searchString = "";
+    private Eleicao selectedItem = null;
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadEleicoesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Erro ao carregar eleições: {ex.Message}";
+            Console.WriteLine($"{errorMessage}\n{ex.StackTrace}");
+        }
+    }
+
+    private async Task LoadEleicoesAsync()
+    {
+        Eleicoes = await DbService.GetEleicoesAsync();
+        selectedItem = null;
+        StateHasChanged();
+    }
+    
+    private bool FilterFunc(Eleicao eleicao)
+    {
+        if (string.IsNullOrWhiteSpace(searchString)) return true;
+        if (eleicao.Nome.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        if (eleicao.Status.Contains(searchString, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    private void RowClicked(TableRowClickEventArgs<Eleicao> args) => selectedItem = args.Item;
+    
+    private void AddEleicao() => NavManager.NavigateTo("/eleicao/detalhes/0");
+
+    private void EditEleicao(int id) => NavManager.NavigateTo($"/eleicao/detalhes/{id}");
+    
+     private async Task ConfirmDelete(int id, string nome)
+    {
+        // Usando o MessageBox, que é feito para confirmações simples.
+        var result = await DialogService.ShowMessageBox(
+            "Confirmar Exclusão", // Título
+            $"Você tem certeza que quer excluir a eleição '{nome}'? Esta ação não pode ser desfeita.", // Mensagem
+            yesText:"Sim, Excluir!", // Texto do botão de confirmação
+            cancelText:"Cancelar"  // Texto do botão de cancelar
+        );
+
+        // O resultado será 'true' se o usuário clicar em "Sim, Excluir!"
+        if (result == true)
+        {
+            try
+            {
+                await DbService.DeleteEleicaoAsync(id);
+                await LoadEleicoesAsync();
+                Snackbar.Add("Eleição excluída.", Severity.Success);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Erro ao excluir: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private void ShowReports()
+    {
+        if (selectedItem != null)
+        {
+            Snackbar.Add("Funcionalidade de Relatórios ainda não implementada.", Severity.Info);
+        }
+    }
 }

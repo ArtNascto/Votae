@@ -1,0 +1,107 @@
+
+@using MudBlazor
+@using Votae.Services 
+@using Microsoft.AspNetCore.Components.Forms
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@DialogTitle</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="form" Model="@candidatoModel" Class="mt-4">
+            <MudGrid>
+                <!-- Linha 1: Número do Candidato (Largura Total) -->
+                <MudItem xs="12">
+                     <MudNumericField @bind-Value="candidatoModel.Numero" Label="Número" Variant="Variant.Outlined" Required="true" Min="1" />
+                </MudItem>
+
+                <!-- Linha 2: Nomes (Lado a Lado) -->
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="candidatoModel.NomeCandidato" Label="Nome do Candidato" Variant="Variant.Outlined" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTextField @bind-Value="candidatoModel.NomeVice" Label="Nome do Vice (Opcional)" Variant="Variant.Outlined" />
+                </MudItem>
+
+                <!-- Linha 3: Uploads e Prévias das Fotos (Lado a Lado) -->
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Foto do Candidato</MudText>
+                    <InputFile OnChange="OnCandidatoFileChanged" accept="image/png, image/jpeg" />
+                    @if (!string.IsNullOrEmpty(candidatoModel.FotoCandidatoBase64))
+                    {
+                        <MudPaper Elevation="3" Class="rounded-lg mt-2 pa-2 d-flex justify-center align-center" Style="height:180px; width:100%;">
+                           <MudImage Src="@($"data:image/jpeg;base64,{candidatoModel.FotoCandidatoBase64}")" Alt="Foto do Candidato" Class="rounded" Style="max-height:100%; max-width:100%; object-fit: cover;" />
+                        </MudPaper>
+                    }
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">Foto do Vice (Opcional)</MudText>
+                    <InputFile OnChange="OnViceFileChanged" accept="image/png, image/jpeg" />
+                    @if (!string.IsNullOrEmpty(candidatoModel.FotoViceBase64))
+                    {
+                        <MudPaper Elevation="3" Class="rounded-lg mt-2 pa-2 d-flex justify-center align-center" Style="height:180px; width:100%;">
+                            <MudImage Src="@($"data:image/jpeg;base64,{candidatoModel.FotoViceBase64}")" Alt="Foto do Vice" Class="rounded" Style="max-height:100%; max-width:100%; object-fit: cover;" />
+                        </MudPaper>
+                    }
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit">Salvar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public Candidato candidatoModel { get; set; } = new();
+    [Parameter] public string DialogTitle { get; set; } = "Novo Candidato";
+
+    private MudForm form;
+
+    private async Task OnCandidatoFileChanged(InputFileChangeEventArgs e)
+    {
+        var base64String = await ToBase64(e.File);
+        if(base64String != null)
+            candidatoModel.FotoCandidatoBase64 = base64String;
+    }
+    
+    private async Task OnViceFileChanged(InputFileChangeEventArgs e)
+    {
+        var base64String = await ToBase64(e.File);
+        if(base64String != null)
+            candidatoModel.FotoViceBase64 = base64String;
+    }
+    
+    private async Task<string> ToBase64(IBrowserFile file)
+    {
+        if (file == null) return null;
+        try
+        {
+            var maxFileSize = 1024 * 500; // 500 KB
+            using var stream = file.OpenReadStream(maxFileSize);
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            return Convert.ToBase64String(ms.ToArray());
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Erro ao ler o arquivo: {ex.Message}", Severity.Error);
+            return null;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (form.IsValid)
+        {
+            MudDialog.Close(DialogResult.Ok(candidatoModel));
+        }
+    }
+}
